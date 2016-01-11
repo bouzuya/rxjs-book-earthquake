@@ -14,8 +14,14 @@ function loadJSONP(url: string) {
 const map = L.map('map').setView([33.858631, -118.279602], 7);
 L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
 
+interface Quake {
+  lat: number;
+  lng: number;
+  size: number;
+};
+
 const quakes = Observable
-.create((observer: Subscriber<any>) => {
+.create((observer: Subscriber<any>): void => {
   (<any>window).eqfeed_callback = (response: any) => {
     observer.next(response);
     observer.complete();
@@ -23,10 +29,13 @@ const quakes = Observable
   loadJSONP(QUAKE_URL);
 })
 .mergeMap((response: any) => Observable.from(response.features))
-.subscribe((quake: any) => {
-  const coords = quake.geometry.coordinates;
+.map((quake: any): Quake => {
+  const [lng, lat] = quake.geometry.coordinates;
   const size = quake.properties.mag * 10000;
-  L.circle([coords[1], coords[0]], size).addTo(map);
+  return { lat, lng, size };
+})
+.subscribe((quake: Quake) => {
+  L.circle([quake.lat, quake.lng], quake.size).addTo(map);
 });
 
 export default function main(): void {
