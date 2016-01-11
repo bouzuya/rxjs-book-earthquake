@@ -1,0 +1,5 @@
+.tmp/
+bundle.js
+lib/
+node_modules/
+typings/
