@@ -14,18 +14,18 @@ function loadJSONP(url: string) {
 const map = L.map('map').setView([33.858631, -118.279602], 7);
 L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
 
-var quakes = Observable.create((observer: Subscriber<any>) => {
+const quakes = Observable
+.create((observer: Subscriber<any>) => {
   (<any>window).eqfeed_callback = (response: any) => {
-    var quakes = response.features;
-    quakes.forEach((quake: any) => {
-      observer.next(quake);
-    });
+    observer.next(response);
+    observer.complete();
   };
   loadJSONP(QUAKE_URL);
-});
-quakes.subscribe((quake: any) => {
-  var coords = quake.geometry.coordinates;
-  var size = quake.properties.mag * 10000;
+})
+.mergeMap((response: any) => Observable.from(response.features))
+.subscribe((quake: any) => {
+  const coords = quake.geometry.coordinates;
+  const size = quake.properties.mag * 10000;
   L.circle([coords[1], coords[0]], size).addTo(map);
 });
 
