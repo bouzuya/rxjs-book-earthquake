@@ -47,7 +47,8 @@ const initialize = () => {
     return h.indexOf(k) === -1 ? { h: h.concat([k]), v: x } : { h, v: null };
   }, <{ h: string[], v: Feature }>{ h: [], v: null })
   .map(({ v }) => v)
-  .filter((v) => v !== null);
+  .filter((v) => v !== null)
+  .share();
 
   quakes
   .map((feature): Quake => {
