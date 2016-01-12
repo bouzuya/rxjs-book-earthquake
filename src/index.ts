@@ -20,18 +20,34 @@ interface Quake {
   size: number;
 };
 
+interface Feature {
+  geometry: { coordinates: number[] };
+  properties: { code: string; mag: number; };
+};
+
 const quakes = Observable
-.create((observer: Subscriber<any>): void => {
-  (<any>window).eqfeed_callback = (response: any) => {
-    observer.next(response);
-    observer.complete();
-  };
-  loadJSONP(QUAKE_URL);
+.interval(5000)
+.mergeMap<any>(() => {
+  // Rx.DOM.jsonpRequest
+  return Observable.create((observer: Subscriber<any>): void => {
+    (<any>window).eqfeed_callback = (response: any) => {
+      observer.next(response);
+      observer.complete();
+    };
+    loadJSONP(QUAKE_URL);
+  });
 })
-.mergeMap((response: any) => Observable.from(response.features))
-.map((quake: any): Quake => {
-  const [lng, lat] = quake.geometry.coordinates;
-  const size = quake.properties.mag * 10000;
+.mergeMap<Feature>((response) => Observable.from(response.features))
+// .distinct (.scan.map.filter)
+.scan(({ h }, x) => {
+  const k = x.properties.code;
+  return h.indexOf(k) === -1 ? { h: h.concat([k]), v: x } : { h, v: null };
+}, <{ h: string[], v: Feature }>{ h: [], v: null })
+.map(({ v }) => v)
+.filter((v) => v !== null)
+.map((feature): Quake => {
+  const [lng, lat] = feature.geometry.coordinates;
+  const size = feature.properties.mag * 10000;
   return { lat, lng, size };
 })
 .subscribe((quake: Quake) => {
