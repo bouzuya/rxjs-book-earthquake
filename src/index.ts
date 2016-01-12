@@ -22,37 +22,62 @@ interface Quake {
 
 interface Feature {
   geometry: { coordinates: number[] };
-  properties: { code: string; mag: number; };
+  properties: {
+    net: string; code: string; time: number; place: any, mag: number;
+  };
 };
 
-const quakes = Observable
-.interval(5000)
-.mergeMap<any>(() => {
-  // Rx.DOM.jsonpRequest
-  return Observable.create((observer: Subscriber<any>): void => {
-    (<any>window).eqfeed_callback = (response: any) => {
-      observer.next(response);
-      observer.complete();
-    };
-    loadJSONP(QUAKE_URL);
+const initialize = () => {
+  const quakes = Observable
+  .interval(5000)
+  .mergeMap<any>(() => {
+    // Rx.DOM.jsonpRequest
+    return Observable.create((observer: Subscriber<any>): void => {
+      (<any>window).eqfeed_callback = (response: any) => {
+        observer.next(response);
+        observer.complete();
+      };
+      loadJSONP(QUAKE_URL);
+    });
+  })
+  .mergeMap<Feature>((response) => Observable.from(response.features))
+  // .distinct (.scan.map.filter)
+  .scan(({ h }, x) => {
+    const k = x.properties.code;
+    return h.indexOf(k) === -1 ? { h: h.concat([k]), v: x } : { h, v: null };
+  }, <{ h: string[], v: Feature }>{ h: [], v: null })
+  .map(({ v }) => v)
+  .filter((v) => v !== null);
+
+  quakes
+  .map((feature): Quake => {
+    const [lng, lat] = feature.geometry.coordinates;
+    const size = feature.properties.mag * 10000;
+    return { lat, lng, size };
+  })
+  .subscribe((quake: Quake) => {
+    L.circle([quake.lat, quake.lng], quake.size).addTo(map);
   });
-})
-.mergeMap<Feature>((response) => Observable.from(response.features))
-// .distinct (.scan.map.filter)
-.scan(({ h }, x) => {
-  const k = x.properties.code;
-  return h.indexOf(k) === -1 ? { h: h.concat([k]), v: x } : { h, v: null };
-}, <{ h: string[], v: Feature }>{ h: [], v: null })
-.map(({ v }) => v)
-.filter((v) => v !== null)
-.map((feature): Quake => {
-  const [lng, lat] = feature.geometry.coordinates;
-  const size = feature.properties.mag * 10000;
-  return { lat, lng, size };
-})
-.subscribe((quake: Quake) => {
-  L.circle([quake.lat, quake.lng], quake.size).addTo(map);
-});
+
+  const makeRow = (feature: Feature): HTMLTableRowElement => {
+    const { net, code, place, mag, time } = feature.properties;
+    const row = document.createElement('tr');
+    row.id = net + code;
+    [place, mag, new Date(time).toString()].forEach((text) => {
+      const cell = document.createElement('td');
+      cell.textContent = text;
+      row.appendChild(cell);
+    });
+    return row;
+  };
+
+  var table = document.getElementById('quakes_info');
+  quakes
+    .map(makeRow)
+    .subscribe((row) => { table.appendChild(row); });
+};
+
+initialize();
 
 export default function main(): void {
   console.log('OK');
