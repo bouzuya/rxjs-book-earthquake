@@ -15,12 +15,14 @@ const map = L.map('map').setView([33.858631, -118.279602], 7);
 L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
 
 interface Quake {
+  id: string;
   lat: number;
   lng: number;
   size: number;
 };
 
 interface Feature {
+  id: string;
   geometry: { coordinates: number[] };
   properties: {
     net: string; code: string; time: number; place: any, mag: number;
@@ -28,6 +30,9 @@ interface Feature {
 };
 
 const initialize = () => {
+  const codeLayers: any = {};
+  const quakeLayer = L.layerGroup([]).addTo(map);  
+
   const quakes = Observable
   .interval(5000)
   .mergeMap<any>(() => {
@@ -52,12 +57,16 @@ const initialize = () => {
 
   quakes
   .map((feature): Quake => {
+    const id = feature.id;
     const [lng, lat] = feature.geometry.coordinates;
     const size = feature.properties.mag * 10000;
-    return { lat, lng, size };
+    return { id, lat, lng, size };
   })
   .subscribe((quake: Quake) => {
-    L.circle([quake.lat, quake.lng], quake.size).addTo(map);
+    const circle = L.circle([quake.lat, quake.lng], quake.size).addTo(map);
+    quakeLayer.addLayer(circle);
+    // getLayerId is undocumented method.
+    codeLayers[quake.id] = L.Util.stamp(circle);
   });
 
   const makeRow = (feature: Feature): HTMLTableRowElement => {
@@ -72,10 +81,40 @@ const initialize = () => {
     return row;
   };
 
+  const isHovering = (element: Node): Observable<boolean> => {
+    const over = Observable.fromEvent(element, 'mouseover').map(() => true);
+    const out = Observable.fromEvent(element, 'mouseout').map(() => false);
+    return over.merge(out);
+  };
+
   var table = document.getElementById('quakes_info');
   quakes
     .map(makeRow)
-    .subscribe((row) => { table.appendChild(row); });
+    .bufferTime(500)
+    .filter(rows => rows.length > 0)
+    .map(rows => {
+      const fragment = document.createDocumentFragment();
+      rows.forEach((row) => fragment.appendChild(row));
+      return fragment;
+    })
+    .subscribe(fragment => {
+      const row = <HTMLElement>fragment.firstChild;
+      const id = row.getAttribute('id');
+      const circleLayer = quakeLayer.getLayer(codeLayers[id]);
+      
+      isHovering(row)
+      .subscribe((hovering) => {
+        circleLayer.setStyle({ color: hovering ? '#ff0000' : '#0000ff' });
+      });
+      
+      Observable
+      .fromEvent(row, 'click')
+      .subscribe(() => {
+        map.panTo(circleLayer.getLatLng());
+      });
+
+      table.appendChild(fragment);
+    });
 };
 
 initialize();
