@@ -16,7 +16,7 @@ interface Quake {
 }
 
 interface Circle {
-  id: string;
+  quakeId: string;
   lat: number;
   lng: number;
   size: number;
@@ -64,16 +64,16 @@ const fetchQuake = (): Observable<Quake> =>
 const quakeToCircle = (quake: Quake): Circle => {
   const { net, code, mag } = quake.properties;
   const [lng, lat] = quake.geometry.coordinates;
-  const id = net + code;
+  const quakeId = net + code;
   const size = mag * 10000;
-  return { id, lat, lng, size };
+  return { quakeId, lat, lng, size };
 };
 
 const quakeToRow = (quake: Quake): HTMLTableRowElement => {
   const { net, code, place, mag, time } = quake.properties;
-  const id = net + code; 
+  const quakeId = net + code; 
   const row = document.createElement('tr');
-  row.id = id; // HTMLTableRowElement.id = Circle.id
+  row.id = quakeId; // HTMLTableRowElement.id = Circle.id
   [place, mag, new Date(time).toString()].forEach((text) => {
     const cell = document.createElement('td');
     cell.textContent = text;
@@ -89,11 +89,11 @@ const initialize = () => {
   const quakeLayerIds: any = {}; // Map<QuakeId, LayerId>
   const quakeLayer = L.layerGroup([]).addTo(map);
   const addCircleLayer = (circle: Circle): void => {
-    const { id, lat, lng, size } = circle;
-    const layer = L.circle([lat, lng], size).addTo(map); // NOTE:
+    const { quakeId, lat, lng, size } = circle;
+    const layer = L.circle([lat, lng], size);
     quakeLayer.addLayer(layer);
     // getLayerId is undocumented method.
-    quakeLayerIds[id] = L.Util.stamp(layer);
+    quakeLayerIds[quakeId] = L.Util.stamp(layer);
   };
   const getCircleLayer = (quakeId: string): any =>
     quakeLayer.getLayer(quakeLayerIds[quakeId]);
