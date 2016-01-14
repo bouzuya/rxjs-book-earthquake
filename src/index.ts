@@ -1,120 +1,131 @@
 import { Observable, Subscriber } from 'rxjs';
 import * as L from 'leaflet';
+import distinct from './distinct';
 import pairwise from './pairwise';
 
-const QUAKE_URL = 'http://earthquake.usgs.gov/earthquakes/feed/v1.0/' +
-  'summary/all_day.geojsonp';
-
-function loadJSONP(url: string) {
-  const script = document.createElement('script');
-  script.src = url;
-  const head = document.getElementsByTagName('head')[0];
-  head.appendChild(script);
+interface Quake {
+  id: string;
+  geometry: { coordinates: number[] };
+  properties: {
+    net: string;
+    code: string;
+    time: number;
+    place: any,
+    mag: number;
+  };
 }
 
-const map = L.map('map').setView([33.858631, -118.279602], 7);
-L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
-
-interface Quake {
+interface Circle {
   id: string;
   lat: number;
   lng: number;
   size: number;
+}
+
+const getRowFromEvent = (
+  table: HTMLTableElement,
+  eventName: string
+): Observable<HTMLTableRowElement> =>
+  Observable
+  .fromEvent<Event>(table, eventName)
+  .filter(event => (<HTMLElement>event.target).tagName === 'TD')
+  .filter(event => (<HTMLElement>event.target).parentElement.id.length > 0)
+  .map(event => <HTMLTableRowElement>(<HTMLElement>event.target).parentElement)
+  .distinctUntilChanged();
+
+const QUAKE_URL = 'http://earthquake.usgs.gov/earthquakes/feed/v1.0/' +
+  'summary/all_day.geojsonp';
+
+const loadJSONP = (url: string): void => {
+  const script = document.createElement('script');
+  script.src = url;
+  const head = document.getElementsByTagName('head')[0];
+  head.appendChild(script);
 };
 
-interface Feature {
-  id: string;
-  geometry: { coordinates: number[] };
-  properties: {
-    net: string; code: string; time: number; place: any, mag: number;
-  };
+const fetchQuake = (): Observable<Quake> =>
+  distinct(
+    Observable
+      .interval(5000)
+      .mergeMap<any>(() => {
+        // Rx.DOM.jsonpRequest
+        return Observable.create((observer: Subscriber<any>): void => {
+          (<any>window).eqfeed_callback = (response: any) => {
+            observer.next(response);
+            observer.complete();
+          };
+          loadJSONP(QUAKE_URL);
+        });
+      })
+      .mergeMap<Quake>(response => Observable.from(response.features)),
+    (x: { properties: { code: string } }) => x.properties.code
+  ).share();
+  
+const quakeToCircle = (quake: Quake): Circle => {
+  const { net, code, mag } = quake.properties;
+  const [lng, lat] = quake.geometry.coordinates;
+  const id = net + code;
+  const size = mag * 10000;
+  return { id, lat, lng, size };
+};
+
+const quakeToRow = (quake: Quake): HTMLTableRowElement => {
+  const { net, code, place, mag, time } = quake.properties;
+  const id = net + code; 
+  const row = document.createElement('tr');
+  row.id = id; // HTMLTableRowElement.id = Circle.id
+  [place, mag, new Date(time).toString()].forEach((text) => {
+    const cell = document.createElement('td');
+    cell.textContent = text;
+    row.appendChild(cell);
+  });
+  return row;
 };
 
 const initialize = () => {
-  const codeLayers: any = {};
-  const quakeLayer = L.layerGroup([]).addTo(map);  
+  const map = L.map('map').setView([33.858631, -118.279602], 7);
+  L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
 
-  const quakes = Observable
-  .interval(5000)
-  .mergeMap<any>(() => {
-    // Rx.DOM.jsonpRequest
-    return Observable.create((observer: Subscriber<any>): void => {
-      (<any>window).eqfeed_callback = (response: any) => {
-        observer.next(response);
-        observer.complete();
-      };
-      loadJSONP(QUAKE_URL);
-    });
-  })
-  .mergeMap<Feature>((response) => Observable.from(response.features))
-  // .distinct (.scan.map.filter)
-  .scan(({ h }, x) => {
-    const k = x.properties.code;
-    return h.indexOf(k) === -1 ? { h: h.concat([k]), v: x } : { h, v: null };
-  }, <{ h: string[], v: Feature }>{ h: [], v: null })
-  .map(({ v }) => v)
-  .filter((v) => v !== null)
-  .share();
-
-  quakes
-  .map((feature): Quake => {
-    const id = feature.id;
-    const [lng, lat] = feature.geometry.coordinates;
-    const size = feature.properties.mag * 10000;
-    return { id, lat, lng, size };
-  })
-  .subscribe((quake: Quake) => {
-    const circle = L.circle([quake.lat, quake.lng], quake.size).addTo(map);
-    quakeLayer.addLayer(circle);
+  const quakeLayerIds: any = {}; // Map<QuakeId, LayerId>
+  const quakeLayer = L.layerGroup([]).addTo(map);
+  const addCircleLayer = (circle: Circle): void => {
+    const { id, lat, lng, size } = circle;
+    const layer = L.circle([lat, lng], size).addTo(map); // NOTE:
+    quakeLayer.addLayer(layer);
     // getLayerId is undocumented method.
-    codeLayers[quake.id] = L.Util.stamp(circle);
-  });
-
-  const makeRow = (feature: Feature): HTMLTableRowElement => {
-    const { net, code, place, mag, time } = feature.properties;
-    const row = document.createElement('tr');
-    row.id = net + code;
-    [place, mag, new Date(time).toString()].forEach((text) => {
-      const cell = document.createElement('td');
-      cell.textContent = text;
-      row.appendChild(cell);
-    });
-    return row;
+    quakeLayerIds[id] = L.Util.stamp(layer);
   };
+  const getCircleLayer = (quakeId: string): any =>
+    quakeLayer.getLayer(quakeLayerIds[quakeId]);
 
-  const isHovering = (element: Node): Observable<boolean> => {
-    const over = Observable.fromEvent(element, 'mouseover').map(() => true);
-    const out = Observable.fromEvent(element, 'mouseout').map(() => false);
-    return over.merge(out);
+  const table = <HTMLTableElement>document.getElementById('quakes_info');
+  const addRow = (row: HTMLTableRowElement): void => {
+    table.appendChild(row);
   };
+  const mouseoveredRow$ = getRowFromEvent(table, 'mouseover');
+  const clickedRow$ = getRowFromEvent(table, 'click');
 
-  var table = document.getElementById('quakes_info');
-  quakes
-    .map(makeRow)
-    .subscribe(row => table.appendChild(row));
+  const quake$ = fetchQuake();
 
-  const getRowFromEvent = (event: any) =>
-    Observable
-    .fromEvent(table, event)
-    .filter((event: { target: HTMLElement }) => {
-      const el = event.target;
-      return el.tagName === 'TD' &&
-        el.parentElement.getAttribute('id').length > 0;
-    })
-    .map((e: any) => e.target.parentNode)
-    .distinctUntilChanged();
-  
-  pairwise(getRowFromEvent('mouseover'))
-    .subscribe((rows) => {
-      const prevCircle = quakeLayer.getLayer(codeLayers[rows[0].id]);
-      const currCircle = quakeLayer.getLayer(codeLayers[rows[1].id]);
+  quake$
+    .map(quakeToCircle)
+    .subscribe(addCircleLayer);
+
+  quake$
+    .map(quakeToRow)
+    .subscribe(addRow);
+
+  pairwise(mouseoveredRow$)
+    .subscribe(([prevRow, currRow]) => {
+      const prevCircle = getCircleLayer(prevRow.id);
+      const currCircle = getCircleLayer(currRow.id);
       prevCircle.setStyle({ color: '#0000ff' });
       currCircle.setStyle({ color: '#ff0000' });
     });
-  
-  getRowFromEvent('click')
+
+  clickedRow$
     .subscribe((row) => {
-      const circle = quakeLayer.getLayer(codeLayers[row.id]);
+      const circle = getCircleLayer(row.id);
       map.panTo(circle.getLatLng());
     });
 };
