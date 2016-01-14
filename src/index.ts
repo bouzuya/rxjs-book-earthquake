@@ -1,5 +1,6 @@
 import { Observable, Subscriber } from 'rxjs';
 import * as L from 'leaflet';
+import pairwise from './pairwise';
 
 const QUAKE_URL = 'http://earthquake.usgs.gov/earthquakes/feed/v1.0/' +
   'summary/all_day.geojsonp';
@@ -90,30 +91,31 @@ const initialize = () => {
   var table = document.getElementById('quakes_info');
   quakes
     .map(makeRow)
-    .bufferTime(500)
-    .filter(rows => rows.length > 0)
-    .map(rows => {
-      const fragment = document.createDocumentFragment();
-      rows.forEach((row) => fragment.appendChild(row));
-      return fragment;
-    })
-    .subscribe(fragment => {
-      const row = <HTMLElement>fragment.firstChild;
-      const id = row.getAttribute('id');
-      const circleLayer = quakeLayer.getLayer(codeLayers[id]);
-      
-      isHovering(row)
-      .subscribe((hovering) => {
-        circleLayer.setStyle({ color: hovering ? '#ff0000' : '#0000ff' });
-      });
-      
-      Observable
-      .fromEvent(row, 'click')
-      .subscribe(() => {
-        map.panTo(circleLayer.getLatLng());
-      });
+    .subscribe(row => table.appendChild(row));
 
-      table.appendChild(fragment);
+  const getRowFromEvent = (event: any) =>
+    Observable
+    .fromEvent(table, event)
+    .filter((event: { target: HTMLElement }) => {
+      const el = event.target;
+      return el.tagName === 'TD' &&
+        el.parentElement.getAttribute('id').length > 0;
+    })
+    .map((e: any) => e.target.parentNode)
+    .distinctUntilChanged();
+  
+  pairwise(getRowFromEvent('mouseover'))
+    .subscribe((rows) => {
+      const prevCircle = quakeLayer.getLayer(codeLayers[rows[0].id]);
+      const currCircle = quakeLayer.getLayer(codeLayers[rows[1].id]);
+      prevCircle.setStyle({ color: '#0000ff' });
+      currCircle.setStyle({ color: '#ff0000' });
+    });
+  
+  getRowFromEvent('click')
+    .subscribe((row) => {
+      const circle = quakeLayer.getLayer(codeLayers[row.id]);
+      map.panTo(circle.getLatLng());
     });
 };
 
