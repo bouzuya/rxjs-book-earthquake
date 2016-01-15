@@ -36,7 +36,7 @@
   },
   "scripts": {
     "babel": "babel --presets es2015 --out-dir lib/ .tmp/src/",
-    "browserify": "browserify lib/index.js -o bundle.js",
+    "browserify": "browserify index.js -o bundle.js",
     "build": "tsc && npm run babel && npm run browserify",
     "clean": "rm -rf dist lib .tmp",
     "start": "npm run clean && npm run build && open index.html"

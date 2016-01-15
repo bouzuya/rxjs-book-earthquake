@@ -6,7 +6,7 @@ import QuakeMap from './quake-map';
 import QuakeRow from './quake-row';
 import QuakeTable from './quake-table';
 
-const initialize = (): void => {
+export default function main(): void {
   const quakeMapElementId = 'quake_map';
   const quakeTableElementId = 'quake_table';
   const defaultCircleColor = '#0000ff';
@@ -37,7 +37,3 @@ const initialize = (): void => {
   quakeTable.getQuakeIdFromEvent('click')
     .subscribe(id => quakeMap.panToCircle(id));
 };
-
-initialize();
-
-export default function main(): void {}
