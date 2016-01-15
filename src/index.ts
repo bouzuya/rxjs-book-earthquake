@@ -9,8 +9,8 @@ import QuakeTable from './quake-table';
 export default function main(): void {
   const quakeMapElementId = 'quake_map';
   const quakeTableElementId = 'quake_table';
-  const defaultCircleColor = '#0000ff';
-  const hoveredCircleColor = '#ff0000';
+  const defaultStyle = { color: '#0000ff' };
+  const focusedStyle = { color: '#ff0000' };
   const quakeMap = new QuakeMap(quakeMapElementId, {
     center: { lat: 33.858631, lng: -118.279602 },
     zoom: 7
@@ -20,9 +20,7 @@ export default function main(): void {
 
   quake$
     .map(quake => QuakeCircle.from(quake))
-    .subscribe(circle =>
-      quakeMap.addCircle(circle, { color: defaultCircleColor })
-    );
+    .subscribe(circle => quakeMap.addCircle(circle, defaultStyle));
 
   quake$
     .map(quake => QuakeRow.from(quake))
@@ -30,8 +28,8 @@ export default function main(): void {
 
   pairwise(quakeTable.getQuakeIdFromEvent('mouseover'))
     .subscribe(([prevQuakeId, currQuakeId]) => {
-      quakeMap.setCircleStyle(prevQuakeId, { color: defaultCircleColor });
-      quakeMap.setCircleStyle(currQuakeId, { color: hoveredCircleColor });
+      quakeMap.setCircleStyle(prevQuakeId, defaultStyle);
+      quakeMap.setCircleStyle(currQuakeId, focusedStyle);
     });
 
   quakeTable.getQuakeIdFromEvent('click')
